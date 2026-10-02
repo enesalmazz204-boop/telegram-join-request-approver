@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+from typing import Optional
 
 from telegram import Update, BotCommand
 from telegram.error import RetryAfter, TelegramError
@@ -12,67 +14,112 @@ from telegram.ext import (
 
 from telethon import TelegramClient, functions, types
 from telethon.sessions import StringSession
-from telethon.errors import FloodWaitError, RPCError
-
-
-# =========================================================
-# SADECE BU 4 ALANI DOLDUR
-# =========================================================
-
-BOT_TOKEN = "8206822443:AAE3zOkzOpU3pD6KpI_0EnjY4B73wSZDsmc"
-
-API_ID = 31895413
-
-API_HASH = "2d3a1e09a65f33ed4c54483dcb4a28bb"
-
-SESSION_STRING = "1BJWap1wBu63pJfv6cV_i8BlVZ3BpV5J1Yjl183tFwenBkDU7koOW9Mp8kbTDPMeE2woc_SWB6wShop5W9siIiv6FFKKJp8y1E_MKpJ9t0MoMHb-t0Q_sVPtxe0qjityOAg_lovAtH1jfA4gmumvuEGwcfLibjkFncp_t97_w0Jlvo81M1JJpP6drv8K1KdFQXowRD3z6iKEKc-jVRI6knIyT8hzBAMwj3mY-9LheQdt_FCKNlySsWheeM4DMiRQlu0LoenXo7U4aPqBcJRPUPYYY_R9-OgzwnD-oO_YWrz79b3nt8JDn4TZiDvZFxlT-XEeD4Ru8cxEO0-EBBy4Puli3GqS6nCc="
+from telethon.errors import (
+    FloodWaitError,
+    RPCError,
+)
 
 
 # =========================================================
 # AYARLAR
 # =========================================================
+#
+# Güvenlik nedeniyle bilgileri environment variable'dan alıyoruz.
+#
+# BOT_TOKEN
+# API_ID
+# API_HASH
+# SESSION_STRING
+#
+# Örnek:
+#
+# BOT_TOKEN=xxxx
+# API_ID=123456
+# API_HASH=xxxx
+# SESSION_STRING=xxxx
+#
+# =========================================================
+
+BOT_TOKEN = '8206822443:AAE3zOkzOpU3pD6KpI_0EnjY4B73wSZDsmc'
+
+API_ID_RAW = 31895413
+
+API_HASH = '2d3a1e09a65f33ed4c54483dcb4a28bb'
+
+SESSION_STRING = "1BJWap1wBu63pJfv6cV_i8BlVZ3BpV5J1Yjl183tFwenBkDU7koOW9Mp8kbTDPMeE2woc_SWB6wShop5W9siIiv6FFKKJp8y1E_MKpJ9t0MoMHb-t0Q_sVPtxe0qjityOAg_lovAtH1jfA4gmumvuEGwcfLibjkFncp_t97_w0Jlvo81M1JJpP6drv8K1KdFQXowRD3z6iKEKc-jVRI6knIyT8hzBAMwj3mY-9LheQdt_FCKNlySsWheeM4DMiRQlu0LoenXo7U4aPqBcJRPUPYYY_R9-OgzwnD-oO_YWrz79b3nt8JDn4TZiDvZFxlT-XEeD4Ru8cxEO0-EBBy4Puli3GqS6nCc="
+
+
+# =========================================================
+# HEDEF
+# =========================================================
 
 TARGET_GROUP = "novaprimesohbet"
 
-# Aynı anda kaç kullanıcı onaylanacak.
-# Çok yüksek yapmak FloodWait riskini artırabilir.
-CONCURRENCY = 5
 
-# Telegram'dan bir seferde alınacak kullanıcı sayısı.
-FETCH_LIMIT = 100
+# =========================================================
+# PERFORMANS
+# =========================================================
 
-# FloodWait dışında geçici hatalarda kaç kez tekrar denenecek.
-MAX_RETRIES = 8
+# Kullanıcılar 1000'erlik paketler halinde işlenir.
+BATCH_SIZE = 1000
 
-# İşlem sırasında Telegram'a biraz nefes payı.
-REQUEST_DELAY = 0.05
+# Aynı anda Telegram'a gönderilecek onay isteği sayısı.
+#
+# 1000 yapmak doğru değildir.
+# 1000 kişilik batch != 1000 eşzamanlı bağlantı.
+#
+# Bu değer Telegram rate-limitlerini gereksiz zorlamamak
+# için kontrollü tutuluyor.
+CONCURRENCY = 20
+
+# Tek kullanıcı için geçici RPC hatalarında maksimum deneme.
+MAX_RETRIES = 3
+
+# FloodWait sonrasında ekstra güvenlik beklemesi.
+FLOOD_EXTRA_DELAY = 1.0
+
+# Batchler arasında küçük nefes aralığı.
+BATCH_DELAY = 0.5
+
+# İstekleri çekerken Telegram'a verilen sayfa boyutu.
+#
+# Telegram'ın GetChatInviteImporters metodunun döndürdüğü
+# sayfa pratikte 100 civarında tutuluyor.
+FETCH_PAGE_SIZE = 100
+
+
+# =========================================================
+# API_ID
+# =========================================================
+
+try:
+    API_ID = int(API_ID_RAW)
+except Exception:
+    API_ID = 0
 
 
 # =========================================================
 # KONTROLLER
 # =========================================================
 
-if not BOT_TOKEN or BOT_TOKEN == "BURAYA_BOT_TOKEN":
+if not BOT_TOKEN:
     raise RuntimeError(
-        "BOT_TOKEN değerini gir."
+        "BOT_TOKEN environment variable eksik."
     )
 
-if not isinstance(API_ID, int) or API_ID <= 0:
+if API_ID <= 0:
     raise RuntimeError(
-        "API_ID sayı olmalıdır."
+        "API_ID environment variable eksik veya geçersiz."
     )
 
-if not API_HASH or API_HASH == "BURAYA_API_HASH":
+if not API_HASH:
     raise RuntimeError(
-        "API_HASH değerini gir."
+        "API_HASH environment variable eksik."
     )
 
-if (
-    not SESSION_STRING
-    or SESSION_STRING == "BURAYA_YENI_SESSION_STRING"
-):
+if not SESSION_STRING:
     raise RuntimeError(
-        "SESSION_STRING değerini gir."
+        "SESSION_STRING environment variable eksik."
     )
 
 if not TARGET_GROUP:
@@ -103,9 +150,30 @@ approval_enabled = False
 
 bulk_running = False
 
-telethon_client = None
+telethon_client: Optional[TelegramClient] = None
 
-bulk_lock = asyncio.Lock()
+
+# =========================================================
+# İSTATİSTİK
+# =========================================================
+
+class Stats:
+    def __init__(self):
+        self.total = 0
+        self.success = 0
+        self.failed = 0
+        self.blocked = 0
+        self.already_done = 0
+        self.retried = 0
+
+    @property
+    def handled(self):
+        return (
+            self.success
+            + self.failed
+            + self.blocked
+            + self.already_done
+        )
 
 
 # =========================================================
@@ -122,34 +190,65 @@ def is_target_chat(chat) -> bool:
         or ""
     ).lower().lstrip("@")
 
-    target = (
-        TARGET_GROUP
-        .lower()
-        .lstrip("@")
-    )
+    target = TARGET_GROUP.lower().lstrip("@")
 
     return username == target
 
 
 # =========================================================
-# TELETHON BAĞLANTISI
+# ADMIN KONTROLÜ - BOT
+# =========================================================
+
+async def is_bot_admin(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> bool:
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if not user or not chat:
+        return False
+
+    try:
+
+        member = await context.bot.get_chat_member(
+            chat_id=chat.id,
+            user_id=user.id,
+        )
+
+        return member.status in (
+            "administrator",
+            "creator",
+        )
+
+    except TelegramError as e:
+
+        logger.warning(
+            "BOT ADMIN KONTROL HATASI | %s",
+            e,
+        )
+
+        return False
+
+
+# =========================================================
+# TELETHON BAŞLAT
 # =========================================================
 
 async def start_telethon():
 
     global telethon_client
 
-    if telethon_client is not None:
-        return
-
-    logger.info(
-        "Telethon bağlantısı başlatılıyor..."
-    )
-
     telethon_client = TelegramClient(
         StringSession(SESSION_STRING),
         API_ID,
         API_HASH,
+        request_retries=3,
+        connection_retries=5,
+        retry_delay=1,
+        auto_reconnect=True,
+        flood_sleep_threshold=60,
     )
 
     await telethon_client.connect()
@@ -157,180 +256,185 @@ async def start_telethon():
     if not await telethon_client.is_user_authorized():
 
         raise RuntimeError(
-            "SESSION_STRING geçersiz veya yetkisiz."
+            "SESSION_STRING geçersiz veya Telegram hesabı yetkisiz."
         )
 
     me = await telethon_client.get_me()
 
     logger.info(
-        "TELETHON HAZIR | user_id=%s | isim=%s",
+        "TELETHON HAZIR | user_id=%s | isim=%s | username=%s",
         me.id,
         me.first_name or "",
+        me.username or "",
     )
 
 
 # =========================================================
-# HEDEF GRUBUN INPUT PEER'INI AL
+# TELETHON ADMIN KONTROLÜ
 # =========================================================
 
-async def get_target_peer():
+async def verify_telethon_admin(entity):
 
     if telethon_client is None:
         raise RuntimeError(
             "Telethon bağlantısı yok."
         )
+
+    me = await telethon_client.get_me()
 
     try:
 
-        peer = await telethon_client.get_input_entity(
-            TARGET_GROUP
-        )
-
-        if peer is None:
-            raise RuntimeError(
-                "Telegram hedef grup için InputPeer döndürmedi."
+        result = await telethon_client(
+            functions.channels.GetParticipantRequest(
+                channel=entity,
+                participant=me,
             )
-
-        logger.info(
-            "HEDEF PEER HAZIR | %s",
-            type(peer).__name__,
         )
 
-        return peer
-
-    except Exception as e:
-
-        logger.exception(
-            "HEDEF PEER ALINAMADI"
-        )
+    except RPCError as e:
 
         raise RuntimeError(
-            f"Hedef grup bulunamadı: {e}"
+            "Telethon hesabı grubun yöneticisi olarak doğrulanamadı. "
+            "Telegram hesabının grupta yönetici olduğundan emin ol."
+        ) from e
+
+    participant = getattr(
+        result,
+        "participant",
+        None,
+    )
+
+    if isinstance(
+        participant,
+        (
+            types.ChannelParticipantAdmin,
+            types.ChannelParticipantCreator,
+        ),
+    ):
+        logger.info(
+            "TELETHON ADMIN OK | user_id=%s",
+            me.id,
         )
+        return True
+
+    raise RuntimeError(
+        "Telethon hesabı grupta yönetici değil. "
+        "Katılma isteklerini onaylayabilmesi için "
+        "Telegram hesabını yönetici yap."
+    )
 
 
 # =========================================================
-# BEKLEYENLERİN İLK SAYFASINI AL
-#
-# ÖNEMLİ:
-# Her seferinde listenin BAŞINDAN alıyoruz.
-#
-# Aldıklarımızı onayladıktan sonra onlar listeden
-# kayboluyor. Böylece offset/pagination problemi
-# tamamen ortadan kalkıyor.
+# RPC HATA SINIFLANDIRMA
 # =========================================================
 
-async def get_pending_batch(peer):
+def error_text(error) -> str:
+
+    return str(error or "").lower()
+
+
+def is_user_channels_too_much(error) -> bool:
+
+    text = error_text(error)
+
+    return (
+        "user_channels_too_much" in text
+        or "already in too many channels/supergroups" in text
+        or "too many channels/supergroups" in text
+    )
+
+
+def is_already_participant(error) -> bool:
+
+    text = error_text(error)
+
+    return (
+        "user_already_participant" in text
+        or "already a participant" in text
+        or "already in the group" in text
+    )
+
+
+def is_request_missing(error) -> bool:
+
+    text = error_text(error)
+
+    return (
+        "hide_requester_missing" in text
+        or "request was missing" in text
+        or "already been handled" in text
+        or "already handled" in text
+    )
+
+
+def is_permission_error(error) -> bool:
+
+    text = error_text(error)
+
+    return (
+        "chat_admin_required" in text
+        or "chat_admin_invite_required" in text
+        or "right_forbidden" in text
+        or "chat_write_forbidden" in text
+        or "channel_private" in text
+        or "channel_invalid" in text
+    )
+
+
+# =========================================================
+# BEKLEYENLERİ ÇEK
+# =========================================================
+
+async def get_all_pending_requests():
 
     if telethon_client is None:
         raise RuntimeError(
-            "Telethon bağlantısı yok."
+            "Telethon bağlantısı başlatılmamış."
         )
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    entity = await telethon_client.get_entity(
+        TARGET_GROUP
+    )
+
+    # Önce gerçek admin yetkisini doğrula.
+    await verify_telethon_admin(entity)
+
+    pending = []
+
+    offset_date = 0
+
+    offset_user = types.InputUserEmpty()
+
+    seen_cursors = set()
+
+    page_number = 0
+
+    while True:
+
+        page_number += 1
 
         try:
 
             result = await telethon_client(
                 functions.messages.GetChatInviteImportersRequest(
-                    peer=peer,
+                    peer=entity,
                     requested=True,
-                    offset_date=0,
-                    offset_user=types.InputUserEmpty(),
-                    limit=FETCH_LIMIT,
+                    offset_date=offset_date,
+                    offset_user=offset_user,
+                    limit=FETCH_PAGE_SIZE,
                 )
             )
-
-            importers = getattr(
-                result,
-                "importers",
-                None,
-            ) or []
-
-            users = getattr(
-                result,
-                "users",
-                None,
-            ) or []
-
-            if not importers:
-                return []
-
-            users_by_id = {
-                user.id: user
-                for user in users
-                if getattr(user, "id", None) is not None
-            }
-
-            pending = []
-
-            for importer in importers:
-
-                if not getattr(
-                    importer,
-                    "requested",
-                    False,
-                ):
-                    continue
-
-                user = users_by_id.get(
-                    importer.user_id
-                )
-
-                if user is None:
-                    logger.warning(
-                        "Kullanıcı bilgisi bulunamadı | user_id=%s",
-                        importer.user_id,
-                    )
-                    continue
-
-                access_hash = getattr(
-                    user,
-                    "access_hash",
-                    None,
-                )
-
-                if access_hash is None:
-                    logger.warning(
-                        "Access hash yok | user_id=%s",
-                        user.id,
-                    )
-                    continue
-
-                pending.append(
-                    types.InputUser(
-                        user_id=user.id,
-                        access_hash=access_hash,
-                    )
-                )
-
-            # Aynı kullanıcı iki kez gelirse tek tut.
-            unique = {}
-
-            for user in pending:
-                unique[user.user_id] = user
-
-            pending = list(
-                unique.values()
-            )
-
-            logger.info(
-                "BEKLEYEN SAYFASI | Telegram=%s | işlenecek=%s",
-                len(importers),
-                len(pending),
-            )
-
-            return pending
 
         except FloodWaitError as e:
 
-            wait_time = max(
-                int(e.seconds),
-                1,
+            wait_time = (
+                float(e.seconds)
+                + FLOOD_EXTRA_DELAY
             )
 
             logger.warning(
-                "GET FLOOD WAIT | %s saniye bekleniyor.",
+                "İSTEKLERİ ÇEKME FLOOD WAIT | "
+                "%.1f saniye bekleniyor.",
                 wait_time,
             )
 
@@ -338,361 +442,722 @@ async def get_pending_batch(peer):
                 wait_time
             )
 
+            page_number -= 1
+            continue
+
         except RPCError as e:
 
-            logger.error(
-                "GET RPC HATASI | deneme=%s/%s | %s",
-                attempt,
-                MAX_RETRIES,
+            logger.exception(
+                "BEKLEYENLERİ ÇEKME RPC HATASI | %s",
                 e,
             )
 
-            if attempt >= MAX_RETRIES:
-                raise
+            raise
 
-            await asyncio.sleep(
-                min(attempt * 2, 10)
+        importers = list(
+            getattr(
+                result,
+                "importers",
+                [],
+            )
+        )
+
+        users = list(
+            getattr(
+                result,
+                "users",
+                [],
+            )
+        )
+
+        logger.info(
+            "BEKLEYEN SAYFASI #%s | Telegram=%s",
+            page_number,
+            len(importers),
+        )
+
+        if not importers:
+            break
+
+        users_by_id = {
+            user.id: user
+            for user in users
+        }
+
+        page_added = 0
+
+        for importer in importers:
+
+            if not getattr(
+                importer,
+                "requested",
+                False,
+            ):
+                continue
+
+            user_id = getattr(
+                importer,
+                "user_id",
+                None,
             )
 
-        except Exception as e:
+            if not user_id:
+                continue
 
-            logger.exception(
-                "BEKLEYENLER ALINIRKEN HATA | deneme=%s/%s",
-                attempt,
-                MAX_RETRIES,
+            user = users_by_id.get(
+                user_id
             )
 
-            if attempt >= MAX_RETRIES:
-                raise
+            if not user:
+                continue
 
-            await asyncio.sleep(
-                min(attempt * 2, 10)
+            access_hash = getattr(
+                user,
+                "access_hash",
+                None,
             )
 
-    return []
+            if access_hash is None:
+                continue
+
+            input_user = types.InputUser(
+                user_id=user.id,
+                access_hash=access_hash,
+            )
+
+            pending.append(
+                input_user
+            )
+
+            page_added += 1
+
+        logger.info(
+            "SAYFA #%s | eklendi=%s | toplam=%s",
+            page_number,
+            page_added,
+            len(pending),
+        )
+
+        # Son kullanıcı üzerinden pagination.
+        last_importer = importers[-1]
+
+        last_user_id = getattr(
+            last_importer,
+            "user_id",
+            None,
+        )
+
+        last_user = users_by_id.get(
+            last_user_id
+        )
+
+        if not last_user:
+            logger.warning(
+                "Pagination için son kullanıcı bulunamadı. "
+                "Liste burada bitiriliyor."
+            )
+            break
+
+        last_access_hash = getattr(
+            last_user,
+            "access_hash",
+            None,
+        )
+
+        if last_access_hash is None:
+            logger.warning(
+                "Son kullanıcının access_hash değeri yok. "
+                "Pagination durduruldu."
+            )
+            break
+
+        new_offset_date = int(
+            getattr(
+                last_importer,
+                "date",
+                0,
+            )
+        )
+
+        new_offset_user = types.InputUser(
+            user_id=last_user.id,
+            access_hash=last_access_hash,
+        )
+
+        cursor_key = (
+            new_offset_date,
+            last_user.id,
+        )
+
+        if cursor_key in seen_cursors:
+
+            logger.warning(
+                "Aynı pagination cursor tekrar geldi. "
+                "Sonsuz döngü engellendi."
+            )
+
+            break
+
+        seen_cursors.add(
+            cursor_key
+        )
+
+        offset_date = new_offset_date
+        offset_user = new_offset_user
+
+        if len(importers) < FETCH_PAGE_SIZE:
+            break
+
+    # Aynı kullanıcıyı tekilleştir.
+    unique = {}
+
+    for user in pending:
+
+        unique[
+            user.user_id
+        ] = user
+
+    pending = list(
+        unique.values()
+    )
+
+    logger.info(
+        "TOPLAM BEKLEYEN İSTEK: %s",
+        len(pending),
+    )
+
+    return entity, pending
 
 
 # =========================================================
-# TEK KULLANICIYI ONAYLA
+# TEK KULLANICI ONAYI
 # =========================================================
 
 async def approve_one(
-    peer,
+    entity,
     user,
+    stats: Stats,
+    semaphore: asyncio.Semaphore,
 ):
 
-    if telethon_client is None:
-        return False
+    async with semaphore:
 
-    user_id = getattr(
-        user,
-        "user_id",
-        None,
+        user_id = getattr(
+            user,
+            "user_id",
+            0,
+        )
+
+        attempt = 0
+
+        while True:
+
+            attempt += 1
+
+            try:
+
+                await telethon_client(
+                    functions.messages.HideChatJoinRequestRequest(
+                        peer=entity,
+                        user_id=user,
+                        approved=True,
+                    )
+                )
+
+                stats.success += 1
+
+                return "success"
+
+            except FloodWaitError as e:
+
+                # FloodWait geçici bir hatadır.
+                # Kullanıcıyı başarısız saymıyoruz.
+                wait_time = (
+                    float(e.seconds)
+                    + FLOOD_EXTRA_DELAY
+                )
+
+                stats.retried += 1
+
+                logger.warning(
+                    "FLOOD WAIT | user_id=%s | "
+                    "%.1f saniye bekleniyor.",
+                    user_id,
+                    wait_time,
+                )
+
+                await asyncio.sleep(
+                    wait_time
+                )
+
+                # FloodWait sonrası aynı kullanıcıyı
+                # tekrar dene.
+                continue
+
+            except RPCError as e:
+
+                # =================================================
+                # BU HATA KALICI / KULLANICIYA ÖZEL
+                # =================================================
+
+                if is_user_channels_too_much(e):
+
+                    stats.blocked += 1
+
+                    logger.warning(
+                        "KULLANICI ATLANDI | "
+                        "user_id=%s | "
+                        "USER_CHANNELS_TOO_MUCH",
+                        user_id,
+                    )
+
+                    return "blocked"
+
+                # =================================================
+                # ZATEN GRUPTA
+                # =================================================
+
+                if is_already_participant(e):
+
+                    stats.already_done += 1
+
+                    logger.info(
+                        "ZATEN ÜYE | user_id=%s",
+                        user_id,
+                    )
+
+                    return "already_done"
+
+                # =================================================
+                # İSTEK ARTIK YOK
+                # =================================================
+
+                if is_request_missing(e):
+
+                    stats.already_done += 1
+
+                    logger.info(
+                        "İSTEK ARTIK YOK / İŞLENMİŞ | "
+                        "user_id=%s",
+                        user_id,
+                    )
+
+                    return "already_done"
+
+                # =================================================
+                # YETKİ PROBLEMİ
+                # =================================================
+
+                if is_permission_error(e):
+
+                    logger.error(
+                        "YETKİ HATASI | "
+                        "user_id=%s | %s",
+                        user_id,
+                        e,
+                    )
+
+                    raise RuntimeError(
+                        "Telegram hesabının katılma "
+                        "isteklerini onaylama yetkisi yok. "
+                        f"Telegram: {e}"
+                    )
+
+                # =================================================
+                # DİĞER RPC HATALARI
+                # =================================================
+
+                if attempt < MAX_RETRIES:
+
+                    stats.retried += 1
+
+                    delay = (
+                        1.0 * attempt
+                    )
+
+                    logger.warning(
+                        "GEÇİCİ RPC HATASI | "
+                        "user_id=%s | "
+                        "deneme=%s/%s | "
+                        "%.1f saniye sonra tekrar | %s",
+                        user_id,
+                        attempt,
+                        MAX_RETRIES,
+                        delay,
+                        e,
+                    )
+
+                    await asyncio.sleep(
+                        delay
+                    )
+
+                    continue
+
+                stats.failed += 1
+
+                logger.error(
+                    "ONAYLANAMADI | "
+                    "user_id=%s | "
+                    "deneme=%s/%s | %s",
+                    user_id,
+                    attempt,
+                    MAX_RETRIES,
+                    e,
+                )
+
+                return "failed"
+
+            except Exception as e:
+
+                if attempt < MAX_RETRIES:
+
+                    stats.retried += 1
+
+                    delay = (
+                        1.0 * attempt
+                    )
+
+                    logger.warning(
+                        "BEKLENMEYEN HATA | "
+                        "user_id=%s | "
+                        "deneme=%s/%s | "
+                        "%.1f saniye sonra tekrar | %s",
+                        user_id,
+                        attempt,
+                        MAX_RETRIES,
+                        delay,
+                        e,
+                    )
+
+                    await asyncio.sleep(
+                        delay
+                    )
+
+                    continue
+
+                stats.failed += 1
+
+                logger.exception(
+                    "ONAYLANAMADI | "
+                    "user_id=%s | %s",
+                    user_id,
+                    e,
+                )
+
+                return "failed"
+
+
+# =========================================================
+# 1000'LİK BATCH İŞLE
+# =========================================================
+
+async def process_batch(
+    entity,
+    users,
+    batch_number,
+    total_batches,
+    stats: Stats,
+):
+
+    batch_total = len(users)
+
+    if batch_total == 0:
+        return
+
+    batch_success = 0
+    batch_failed = 0
+    batch_blocked = 0
+    batch_already = 0
+
+    logger.info(
+        "=================================================="
     )
 
-    for attempt in range(
-        1,
-        MAX_RETRIES + 1,
-    ):
-
-        try:
-
-            await telethon_client(
-                functions.messages.HideChatJoinRequestRequest(
-                    peer=peer,
-                    user_id=user,
-                    approved=True,
-                )
-            )
-
-            logger.info(
-                "ONAYLANDI | user_id=%s",
-                user_id,
-            )
-
-            return True
-
-        except FloodWaitError as e:
-
-            wait_time = max(
-                int(e.seconds),
-                1,
-            )
-
-            logger.warning(
-                "FLOOD WAIT | user_id=%s | %s saniye",
-                user_id,
-                wait_time,
-            )
-
-            await asyncio.sleep(
-                wait_time
-            )
-
-        except RPCError as e:
-
-            error_text = str(e)
-
-            # İstek zaten işlenmişse bunu başarısız
-            # saymıyoruz.
-            if (
-                "HIDE_REQUESTER_MISSING"
-                in error_text
-                or "USER_ALREADY_PARTICIPANT"
-                in error_text
-            ):
-
-                logger.info(
-                    "İSTEK ZATEN İŞLENMİŞ | user_id=%s",
-                    user_id,
-                )
-
-                return True
-
-            logger.warning(
-                "ONAY RPC HATASI | user_id=%s | deneme=%s/%s | %s",
-                user_id,
-                attempt,
-                MAX_RETRIES,
-                e,
-            )
-
-            if attempt >= MAX_RETRIES:
-                return False
-
-            await asyncio.sleep(
-                min(attempt * 2, 10)
-            )
-
-        except Exception as e:
-
-            logger.warning(
-                "ONAY HATASI | user_id=%s | deneme=%s/%s | %s",
-                user_id,
-                attempt,
-                MAX_RETRIES,
-                e,
-            )
-
-            if attempt >= MAX_RETRIES:
-                return False
-
-            await asyncio.sleep(
-                min(attempt * 2, 10)
-            )
-
-    return False
-
-
-# =========================================================
-# BİR BATCH'İ ONAYLA
-# =========================================================
-
-async def approve_batch(
-    peer,
-    users,
-):
-
-    if not users:
-        return 0, 0
+    logger.info(
+        "BATCH #%s/%s BAŞLADI | %s kullanıcı",
+        batch_number,
+        total_batches,
+        batch_total,
+    )
 
     semaphore = asyncio.Semaphore(
         CONCURRENCY
     )
 
-    success = 0
-    failed = 0
-
-    counter_lock = asyncio.Lock()
-
-    async def worker(user):
-
-        nonlocal success
-        nonlocal failed
-
-        async with semaphore:
-
-            result = await approve_one(
-                peer,
-                user,
-            )
-
-            async with counter_lock:
-
-                if result:
-                    success += 1
-                else:
-                    failed += 1
-
-            await asyncio.sleep(
-                REQUEST_DELAY
-            )
-
     tasks = [
         asyncio.create_task(
-            worker(user)
+            approve_one(
+                entity,
+                user,
+                stats,
+                semaphore,
+            )
         )
         for user in users
     ]
 
-    await asyncio.gather(
-        *tasks,
-        return_exceptions=False,
+    for future in asyncio.as_completed(
+        tasks
+    ):
+
+        try:
+
+            result = await future
+
+            if result == "success":
+                batch_success += 1
+
+            elif result == "failed":
+                batch_failed += 1
+
+            elif result == "blocked":
+                batch_blocked += 1
+
+            elif result == "already_done":
+                batch_already += 1
+
+        except Exception as e:
+
+            # Bir kullanıcının problemi diğerlerini
+            # durdurmasın.
+            batch_failed += 1
+
+            logger.exception(
+                "BATCH WORKER HATASI | %s",
+                e,
+            )
+
+    logger.info(
+        "BATCH #%s BİTTİ | "
+        "başarılı=%s | "
+        "zaten_tamam=%s | "
+        "kanal_limiti=%s | "
+        "başarısız=%s | "
+        "toplam başarılı=%s | "
+        "toplam kanal_limiti=%s | "
+        "toplam başarısız=%s",
+        batch_number,
+        batch_success,
+        batch_already,
+        batch_blocked,
+        batch_failed,
+        stats.success,
+        stats.blocked,
+        stats.failed,
     )
 
-    return success, failed
+    if BATCH_DELAY > 0:
+
+        await asyncio.sleep(
+            BATCH_DELAY
+        )
 
 
 # =========================================================
 # TÜM BEKLEYENLERİ ONAYLA
-#
-# BURASI ASIL ÇÖZÜM.
-#
-# 199 / 200 / 100 sınırında durmaz.
-#
-# Her tur:
-#
-# 1. İlk 100 bekleyeni al
-# 2. Onayla
-# 3. Tekrar ilk 100'ü al
-# 4. Liste boşalana kadar devam et
-#
 # =========================================================
 
 async def approve_all_pending():
 
     global bulk_running
 
-    async with bulk_lock:
+    if bulk_running:
 
-        if bulk_running:
+        return {
+            "already_running": True,
+            "total": 0,
+            "success": 0,
+            "failed": 0,
+            "blocked": 0,
+            "already_done": 0,
+        }
+
+    bulk_running = True
+
+    try:
+
+        logger.info(
+            "=================================================="
+        )
+
+        logger.info(
+            "TOPLU ONAY SİSTEMİ BAŞLIYOR"
+        )
+
+        logger.info(
+            "BATCH_SIZE=%s | CONCURRENCY=%s",
+            BATCH_SIZE,
+            CONCURRENCY,
+        )
+
+        # =====================================================
+        # TÜM BEKLEYENLERİ AL
+        # =====================================================
+
+        entity, users = (
+            await get_all_pending_requests()
+        )
+
+        total = len(users)
+
+        stats = Stats()
+
+        stats.total = total
+
+        if total == 0:
+
+            logger.info(
+                "BEKLEYEN İSTEK YOK."
+            )
 
             return {
+                "already_running": False,
                 "total": 0,
                 "success": 0,
                 "failed": 0,
-                "already_running": True,
+                "blocked": 0,
+                "already_done": 0,
             }
 
-        bulk_running = True
+        total_batches = (
+            (total + BATCH_SIZE - 1)
+            // BATCH_SIZE
+        )
+
+        logger.info(
+            "TOPLAM %s KULLANICI | %s BATCH",
+            total,
+            total_batches,
+        )
+
+        # =====================================================
+        # 1000'LİK BATCHLER
+        # =====================================================
+
+        for start in range(
+            0,
+            total,
+            BATCH_SIZE,
+        ):
+
+            end = min(
+                start + BATCH_SIZE,
+                total,
+            )
+
+            batch_users = users[
+                start:end
+            ]
+
+            batch_number = (
+                start // BATCH_SIZE
+            ) + 1
+
+            await process_batch(
+                entity=entity,
+                users=batch_users,
+                batch_number=batch_number,
+                total_batches=total_batches,
+                stats=stats,
+            )
+
+        # =====================================================
+        # SON KONTROL
+        # =====================================================
+
+        remaining = None
 
         try:
 
-            peer = await get_target_peer()
-
-            total_success = 0
-            total_failed = 0
-            total_seen = 0
-
-            batch_number = 0
-
-            while True:
-
-                batch_number += 1
-
-                logger.info(
-                    "========================================"
+            check_result = await telethon_client(
+                functions.messages.GetChatInviteImportersRequest(
+                    peer=entity,
+                    requested=True,
+                    offset_date=0,
+                    offset_user=types.InputUserEmpty(),
+                    limit=1,
                 )
+            )
 
-                logger.info(
-                    "BATCH #%s | BEKLEYENLER ALINIYOR",
-                    batch_number,
+            remaining = int(
+                getattr(
+                    check_result,
+                    "count",
+                    0,
                 )
+            )
 
-                users = await get_pending_batch(
-                    peer
-                )
+        except Exception as e:
 
-                # Hiç istek kalmadı.
-                if not users:
+            logger.warning(
+                "SON KALAN SAYISI ALINAMADI | %s",
+                e,
+            )
 
-                    logger.info(
-                        "BEKLEYEN İSTEK KALMADI."
-                    )
+        logger.info(
+            "=================================================="
+        )
 
-                    break
+        logger.info(
+            "TOPLU ONAY TAMAMLANDI"
+        )
 
-                batch_size = len(users)
+        logger.info(
+            "Toplam bulunan      : %s",
+            total,
+        )
 
-                total_seen += batch_size
+        logger.info(
+            "Onaylanan            : %s",
+            stats.success,
+        )
 
-                logger.info(
-                    "BATCH #%s | %s kullanıcı işlenecek",
-                    batch_number,
-                    batch_size,
-                )
+        logger.info(
+            "Zaten tamamlanmış   : %s",
+            stats.already_done,
+        )
 
-                success, failed = (
-                    await approve_batch(
-                        peer,
-                        users,
-                    )
-                )
+        logger.info(
+            "Kullanıcı limiti    : %s",
+            stats.blocked,
+        )
 
-                total_success += success
-                total_failed += failed
+        logger.info(
+            "Diğer başarısız     : %s",
+            stats.failed,
+        )
 
-                logger.info(
-                    "BATCH #%s BİTTİ | başarılı=%s | başarısız=%s | toplam başarılı=%s | toplam başarısız=%s",
-                    batch_number,
-                    success,
-                    failed,
-                    total_success,
-                    total_failed,
-                )
+        logger.info(
+            "Tekrar deneme       : %s",
+            stats.retried,
+        )
 
-                # Eğer batch'in tamamı başarısız olduysa
-                # sonsuz döngüye girmemek için tekrar
-                # kontrol ediyoruz.
-                if success == 0:
+        logger.info(
+            "Telegram'da kalan   : %s",
+            remaining,
+        )
 
-                    logger.warning(
-                        "Bu batch'te hiçbir istek onaylanamadı."
-                    )
+        logger.info(
+            "=================================================="
+        )
 
-                    # Birkaç saniye bekle.
-                    await asyncio.sleep(5)
+        return {
+            "already_running": False,
+            "total": total,
+            "success": stats.success,
+            "failed": stats.failed,
+            "blocked": stats.blocked,
+            "already_done": stats.already_done,
+            "remaining": remaining,
+        }
 
-                    # Tekrar kontrol et.
-                    retry_users = (
-                        await get_pending_batch(
-                            peer
-                        )
-                    )
+    finally:
 
-                    if not retry_users:
-
-                        break
-
-                    # Hâlâ aynı kullanıcılar varsa
-                    # Telegram tarafında kalıcı bir hata
-                    # vardır.
-                    if (
-                        len(retry_users)
-                        >= batch_size
-                    ):
-
-                        raise RuntimeError(
-                            "Bekleyen istekler alınabiliyor fakat "
-                            "Telegram hiçbirini onaylamaya izin vermiyor. "
-                            "Hesabın grup yöneticisi olduğundan ve "
-                            "üyeleri onaylama yetkisine sahip olduğundan emin ol."
-                        )
-
-            return {
-                "total": total_seen,
-                "success": total_success,
-                "failed": total_failed,
-                "already_running": False,
-            }
-
-        finally:
-
-            bulk_running = False
+        bulk_running = False
 
 
 # =========================================================
-# YENİ GELEN İSTEK
+# YENİ GELEN KATILMA İSTEĞİ
 # =========================================================
 
 async def new_join_request(
@@ -723,10 +1188,7 @@ async def new_join_request(
 
         return
 
-    for attempt in range(
-        1,
-        MAX_RETRIES + 1,
-    ):
+    while True:
 
         try:
 
@@ -749,7 +1211,7 @@ async def new_join_request(
             )
 
             logger.warning(
-                "BOT RATE LIMIT | %.2f saniye",
+                "BOT RATE LIMIT | %.1f saniye",
                 wait_time,
             )
 
@@ -759,20 +1221,32 @@ async def new_join_request(
 
         except TelegramError as e:
 
-            logger.warning(
-                "YENİ İSTEK ONAY HATASI | deneme=%s/%s | user_id=%s | %s",
-                attempt,
-                MAX_RETRIES,
+            text = error_text(e)
+
+            # Kullanıcıya özel kalıcı problem.
+            if (
+                "too many channels" in text
+                or "supergroups" in text
+            ):
+
+                logger.warning(
+                    "YENİ İSTEK KULLANICI LİMİTİ "
+                    "NEDENİYLE ONAYLANAMADI | "
+                    "user_id=%s | %s",
+                    user.id,
+                    e,
+                )
+
+                return
+
+            logger.error(
+                "YENİ İSTEK ONAYLANAMADI | "
+                "user_id=%s | %s",
                 user.id,
                 e,
             )
 
-            if attempt >= MAX_RETRIES:
-                return
-
-            await asyncio.sleep(
-                min(attempt * 2, 10)
-            )
+            return
 
         except Exception as e:
 
@@ -782,44 +1256,6 @@ async def new_join_request(
             )
 
             return
-
-
-# =========================================================
-# ADMIN KONTROLÜ
-# =========================================================
-
-async def is_admin(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> bool:
-
-    user = update.effective_user
-
-    chat = update.effective_chat
-
-    if not user or not chat:
-        return False
-
-    try:
-
-        member = await context.bot.get_chat_member(
-            chat_id=chat.id,
-            user_id=user.id,
-        )
-
-        return member.status in (
-            "administrator",
-            "creator",
-        )
-
-    except TelegramError as e:
-
-        logger.warning(
-            "Admin kontrolü başarısız: %s",
-            e,
-        )
-
-        return False
 
 
 # =========================================================
@@ -841,7 +1277,7 @@ async def onayla(
     if not is_target_chat(chat):
         return
 
-    if not await is_admin(
+    if not await is_bot_admin(
         update,
         context,
     ):
@@ -860,20 +1296,26 @@ async def onayla(
 
         return
 
-    # Yeni gelenleri hemen otomatik onayla.
+    # =====================================================
+    # YENİ GELENLERİ HEMEN OTOMATİK ONAYLA
+    # =====================================================
+
     approval_enabled = True
 
     status = await update.effective_message.reply_text(
-        "⏳ TOPLU ONAY BAŞLADI\n\n"
-        "Bekleyen istekler parça parça işleniyor.\n"
-        "🟢 Yeni gelenler de otomatik onaylanacak."
+        "🚀 TOPLU ONAY BAŞLADI\n\n"
+        "⏳ Bekleyen istekler alınıyor...\n"
+        "📦 İşlem paketleri: 1.000 kişi\n"
+        "🟢 Yeni gelenler otomatik onaylanacak."
     )
 
     try:
 
         result = await approve_all_pending()
 
-        if result.get("already_running"):
+        if result.get(
+            "already_running"
+        ):
 
             await status.edit_text(
                 "⏳ Toplu onay zaten çalışıyor.\n\n"
@@ -888,6 +1330,16 @@ async def onayla(
 
         failed = result["failed"]
 
+        blocked = result["blocked"]
+
+        already_done = result[
+            "already_done"
+        ]
+
+        remaining = result.get(
+            "remaining"
+        )
+
         if total == 0:
 
             await status.edit_text(
@@ -898,26 +1350,24 @@ async def onayla(
 
             return
 
-        if failed == 0:
+        remaining_text = (
+            f"{remaining:,}"
+            if remaining is not None
+            else "kontrol edilemedi"
+        )
 
-            await status.edit_text(
-                "✅ ONAYLAMA TAMAMLANDI\n\n"
-                f"👥 İşlenen: {total:,}\n"
-                f"✅ Onaylanan: {success:,}\n"
-                f"❌ Başarısız: 0\n\n"
-                "🟢 Otomatik onay AKTİF.\n"
-                "Yeni gelenler otomatik olarak onaylanacak."
-            )
-
-        else:
-
-            await status.edit_text(
-                "⚠️ ONAYLAMA TAMAMLANDI\n\n"
-                f"👥 İşlenen: {total:,}\n"
-                f"✅ Onaylanan: {success:,}\n"
-                f"❌ Başarısız: {failed:,}\n\n"
-                "🟢 Otomatik onay AKTİF."
-            )
+        await status.edit_text(
+            "✅ TOPLU ONAY İŞLEMİ TAMAMLANDI\n\n"
+            f"👥 Bulunan: {total:,}\n"
+            f"✅ Onaylanan: {success:,}\n"
+            f"↪️ Zaten tamamlanan: {already_done:,}\n"
+            f"⚠️ Kullanıcı kanal limiti: {blocked:,}\n"
+            f"❌ Diğer başarısız: {failed:,}\n"
+            f"📭 Telegram'da kalan: {remaining_text}\n\n"
+            "📦 Paket boyutu: 1.000\n"
+            f"⚡ Paralel işlem: {CONCURRENCY}\n\n"
+            "🟢 Yeni gelen otomatik onay AKTİF."
+        )
 
     except Exception as e:
 
@@ -925,14 +1375,14 @@ async def onayla(
             "TOPLU ONAY KOMUT HATASI"
         )
 
-        # Hata olsa bile yeni gelen istekler
-        # otomatik onaylanmaya devam etsin.
+        # Hata olsa bile yeni gelenlerin otomatik
+        # onaylanması açık kalır.
         approval_enabled = True
 
         await status.edit_text(
             "❌ TOPLU ONAY DURDU\n\n"
-            f"Hata: {str(e)[:700]}\n\n"
-            "🟢 Yeni gelen isteklerin otomatik onayı AKTİF."
+            f"{str(e)[:700]}\n\n"
+            "🟢 Yeni gelen otomatik onay AKTİF."
         )
 
 
@@ -947,7 +1397,7 @@ async def durdur(
 
     global approval_enabled
 
-    if not await is_admin(
+    if not await is_bot_admin(
         update,
         context,
     ):
@@ -970,7 +1420,7 @@ async def durum(
     context: ContextTypes.DEFAULT_TYPE,
 ):
 
-    if not await is_admin(
+    if not await is_bot_admin(
         update,
         context,
     ):
@@ -992,14 +1442,14 @@ async def durum(
         "📊 SİSTEM DURUMU\n\n"
         f"🤖 Otomatik onay: {state}\n"
         f"⚡ Toplu işlem: {bulk}\n"
-        f"📦 Batch boyutu: {FETCH_LIMIT}\n"
-        f"⚡ Paralel işlem: {CONCURRENCY}\n"
+        f"📦 Batch: {BATCH_SIZE:,}\n"
+        f"🚀 Paralel: {CONCURRENCY}\n"
         f"🎯 Hedef: @{TARGET_GROUP}"
     )
 
 
 # =========================================================
-# BAŞLANGIÇ
+# POST INIT
 # =========================================================
 
 async def post_init(
@@ -1009,7 +1459,7 @@ async def post_init(
     await application.bot.set_my_commands([
         BotCommand(
             "onayla",
-            "Bekleyenlerin tamamını onayla",
+            "Bekleyenleri toplu onayla",
         ),
         BotCommand(
             "durdur",
@@ -1030,7 +1480,7 @@ async def post_init(
     logger.info(
         "BOT HAZIR | hedef=@%s | batch=%s | concurrency=%s",
         TARGET_GROUP,
-        FETCH_LIMIT,
+        BATCH_SIZE,
         CONCURRENCY,
     )
 
