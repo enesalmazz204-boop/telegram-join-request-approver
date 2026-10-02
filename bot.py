@@ -11,18 +11,28 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# =========================
-# RAILWAY VARIABLES
-# =========================
-# Railway Variables'tan token al.
-# BOT_TOKEN önerilen isimdir; TELEGRAM_BOT_TOKEN da desteklenir.
-BOT_TOKEN = '8206822443:AAG1wWM5woL05ruRNmdoJcKN3vcZNMzSTfc'
-    
+# ============================================================
+# AYARLAR
+# ============================================================
 
-TARGET_GROUP = os.getenv("TARGET_GROUP", "novaprimesohbet").strip()
-APPROVAL_CONCURRENCY = max(1, int(os.getenv("APPROVAL_CONCURRENCY", "20")))
+# Railway > Variables:
+# BOT_TOKEN = BotFather tokenın
+BOT_TOKEN = '8206822443:AAE3zOkzOpU3pD6KpI_0EnjY4B73wSZDsmc'
 
-# İstersen Railway'e ADMIN_IDS ekleyebilirsin:
+# Railway > Variables:
+# TARGET_GROUP = novaprimesohbet
+TARGET_GROUP = os.getenv(
+    "TARGET_GROUP",
+    "novaprimesohbet"
+).strip().lstrip("@")
+
+# Aynı anda kaç istek onaylanabilir?
+APPROVAL_CONCURRENCY = max(
+    1,
+    int(os.getenv("APPROVAL_CONCURRENCY", "20"))
+)
+
+# İsteğe bağlı:
 # ADMIN_IDS=123456789,987654321
 ADMIN_IDS = {
     int(x.strip())
@@ -30,184 +40,347 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
+# ============================================================
+# KONTROLLER
+# ============================================================
+
 if not BOT_TOKEN:
     raise RuntimeError(
-        "Telegram bot tokeni bulunamadı. Railway > Variables bölümüne "
-        "BOT_TOKEN = BotFather tokeni ekle ve yeniden deploy et."
+        "BOT_TOKEN bulunamadı. "
+        "Railway > Variables bölümüne BOT_TOKEN ekle."
     )
-
-TARGET_GROUP = TARGET_GROUP.lstrip("@")
 
 if not TARGET_GROUP:
     raise RuntimeError(
-        "TARGET_GROUP boş. Railway > Variables bölümüne "
-        "TARGET_GROUP=novaprimesohbet ekle."
+        "TARGET_GROUP boş. "
+        "Railway > Variables bölümüne TARGET_GROUP=novaprimesohbet ekle."
     )
 
-semaphore = asyncio.Semaphore(APPROVAL_CONCURRENCY)
-
-# Başlangıçta otomatik onay AÇIK.
-approval_enabled = True
+# ============================================================
+# LOG
+# ============================================================
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
     level=logging.INFO,
 )
+
 logger = logging.getLogger("join-approver")
 
+# ============================================================
+# DURUM
+# ============================================================
+
+# ÖNEMLİ:
+# Bot ilk açıldığında otomatik onay KAPALI.
+# /onayla yazınca aktif olur.
+approval_enabled = False
+
+semaphore = asyncio.Semaphore(APPROVAL_CONCURRENCY)
+
+# ============================================================
+# HEDEF GRUP KONTROLÜ
+# ============================================================
 
 def is_target_chat(chat) -> bool:
-    username = (chat.username or "").lower()
-    target = TARGET_GROUP.lower()
-
-    return (
-        str(chat.id) == TARGET_GROUP
-        or username == target
-    )
-
-
-async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user = update.effective_user
-    chat = update.effective_chat
-
-    if not user:
-        return False
-
-    # ADMIN_IDS verilmişse yalnızca bu kullanıcılar komut kullanabilir.
-    if ADMIN_IDS:
-        return user.id in ADMIN_IDS
-
-    # ADMIN_IDS yoksa Telegram'daki grup yöneticisini kontrol et.
     if not chat:
         return False
 
+    username = (chat.username or "").lower()
+    target = TARGET_GROUP.lower()
+
+    # @novaprimesohbet
+    if username == target:
+        return True
+
+    # Eğer TARGET_GROUP Telegram chat ID olarak verilirse
+    if str(chat.id) == TARGET_GROUP:
+        return True
+
+    return False
+
+
+# ============================================================
+# ADMİN KONTROLÜ
+# ============================================================
+
+async def is_admin(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> bool:
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if not user or not chat:
+        return False
+
+    # ADMIN_IDS tanımlandıysa sadece bu kişiler yetkili.
+    if ADMIN_IDS:
+        return user.id in ADMIN_IDS
+
+    # ADMIN_IDS yoksa Telegram grup yöneticisini kontrol et.
     try:
-        member = await context.bot.get_chat_member(chat.id, user.id)
+        member = await context.bot.get_chat_member(
+            chat_id=chat.id,
+            user_id=user.id,
+        )
+
         return member.status in ("administrator", "creator")
-    except TelegramError:
+
+    except TelegramError as e:
+        logger.warning(
+            "Admin kontrolü başarısız | user_id=%s | %s",
+            user.id,
+            e,
+        )
         return False
 
 
-async def cmd_onayla(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============================================================
+# /ONAYLA
+# ============================================================
+
+async def cmd_onayla(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
     global approval_enabled
 
+    if not update.effective_chat:
+        return
+
+    # Sadece hedef grupta çalışsın
+    if not is_target_chat(update.effective_chat):
+        return
+
+    # Sadece admin çalıştırabilsin
     if not await is_admin(update, context):
+        await update.effective_message.reply_text(
+            "❌ Bu komutu sadece grup yöneticileri kullanabilir."
+        )
         return
 
     approval_enabled = True
 
     await update.effective_message.reply_text(
-        "✅ Katılma isteği otomatik onayı AKTİF.\n"
-        "Yeni gelen istekler otomatik olarak onaylanacak."
+        "✅ Otomatik onay AKTİF.\n\n"
+        "Yeni katılma istekleri otomatik olarak onaylanacak."
     )
 
     logger.info(
-        "ONAY AKTİF | komutu kullanan user_id=%s",
+        "OTOMATİK ONAY AKTİF | user_id=%s",
         update.effective_user.id,
     )
 
 
-async def cmd_durdur(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ============================================================
+# /DURDUR
+# ============================================================
+
+async def cmd_durdur(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
     global approval_enabled
 
+    if not update.effective_chat:
+        return
+
+    if not is_target_chat(update.effective_chat):
+        return
+
     if not await is_admin(update, context):
+        await update.effective_message.reply_text(
+            "❌ Bu komutu sadece grup yöneticileri kullanabilir."
+        )
         return
 
     approval_enabled = False
 
     await update.effective_message.reply_text(
-        "⛔ Katılma isteği otomatik onayı DURDURULDU."
+        "⛔ Otomatik onay DURDURULDU."
     )
 
     logger.info(
-        "ONAY DURDURULDU | komutu kullanan user_id=%s",
+        "OTOMATİK ONAY DURDURULDU | user_id=%s",
         update.effective_user.id,
     )
 
 
-async def cmd_durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin(update, context):
+# ============================================================
+# /DURUM
+# ============================================================
+
+async def cmd_durum(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not update.effective_chat:
         return
 
-    durum = "AKTİF ✅" if approval_enabled else "DURDURULDU ⛔"
+    if not is_target_chat(update.effective_chat):
+        return
+
+    if not await is_admin(update, context):
+        await update.effective_message.reply_text(
+            "❌ Bu komutu sadece grup yöneticileri kullanabilir."
+        )
+        return
+
+    durum = (
+        "AKTİF ✅"
+        if approval_enabled
+        else "KAPALI ⛔"
+    )
 
     await update.effective_message.reply_text(
-        f"📊 Katılma İsteği Sistemi\n\n"
+        "📊 Katılma İsteği Sistemi\n\n"
         f"Durum: {durum}\n"
         f"⚡ Eşzamanlı onay: {APPROVAL_CONCURRENCY}\n"
         f"👥 Hedef: @{TARGET_GROUP}"
     )
 
 
+# ============================================================
+# KATILMA İSTEĞİ
+# ============================================================
+
 async def approve_join_request(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+):
+
     global approval_enabled
 
     request = update.chat_join_request
 
-    if not request or not approval_enabled:
+    if not request:
+        return
+
+    # /onayla yazılmadıysa hiçbir şey yapma
+    if not approval_enabled:
+        logger.info(
+            "İSTEK GELDİ fakat otomatik onay kapalı | user_id=%s",
+            request.from_user.id,
+        )
         return
 
     chat = request.chat
     user = request.from_user
 
+    # Sadece hedef grup
     if not is_target_chat(chat):
         return
 
+    logger.info(
+        "KATILMA İSTEĞİ | grup=@%s | user=%s | user_id=%s",
+        TARGET_GROUP,
+        user.full_name,
+        user.id,
+    )
+
     async with semaphore:
+
         while True:
+
             try:
+
                 await context.bot.approve_chat_join_request(
                     chat_id=chat.id,
                     user_id=user.id,
                 )
 
                 logger.info(
-                    "ONAYLANDI | %s | user_id=%s",
+                    "ONAYLANDI ✅ | %s | user_id=%s",
                     user.full_name,
                     user.id,
                 )
+
                 return
 
             except RetryAfter as e:
-                wait = max(0.1, float(e.retry_after))
+
+                wait = max(
+                    0.1,
+                    float(e.retry_after)
+                )
+
                 logger.warning(
-                    "Telegram rate limit: %.2fs bekleniyor.",
+                    "Telegram rate limit | %.2f saniye bekleniyor",
                     wait,
                 )
+
                 await asyncio.sleep(wait)
 
             except TelegramError as e:
-                logger.warning(
-                    "Onaylanamadı | user_id=%s | %s",
+
+                logger.error(
+                    "ONAYLANAMADI ❌ | user_id=%s | %s",
                     user.id,
                     e,
                 )
+
                 return
 
             except Exception:
+
                 logger.exception(
-                    "Beklenmeyen hata | user_id=%s",
+                    "BEKLENMEYEN HATA | user_id=%s",
                     user.id,
                 )
+
                 return
 
 
-async def post_init(application: Application) -> None:
-    # Telegram'daki komut menüsünü ayarla.
+# ============================================================
+# BOT BAŞLANGICI
+# ============================================================
+
+async def post_init(application: Application):
+
+    # Telegram komut menüsü
     await application.bot.set_my_commands([
-        BotCommand("onayla", "Katılma isteklerini otomatik onayla"),
-        BotCommand("durdur", "Otomatik onayı durdur"),
-        BotCommand("durum", "Onay sisteminin durumunu göster"),
+        BotCommand(
+            "onayla",
+            "Otomatik katılma onayını aç"
+        ),
+        BotCommand(
+            "durdur",
+            "Otomatik katılma onayını kapat"
+        ),
+        BotCommand(
+            "durum",
+            "Otomatik onay durumunu göster"
+        ),
     ])
 
-    # Önceden kalmış webhook varsa polling'in önüne geçmesin.
-    await application.bot.delete_webhook(drop_pending_updates=False)
+    # Webhook varsa polling kullanabilmek için kaldır
+    await application.bot.delete_webhook(
+        drop_pending_updates=False
+    )
+
+    logger.info(
+        "Telegram bağlantısı hazır"
+    )
 
 
-def main() -> None:
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    logger.info(
+        "BOT BAŞLIYOR | hedef=@%s | concurrency=%s | otomatik_onay=%s",
+        TARGET_GROUP,
+        APPROVAL_CONCURRENCY,
+        approval_enabled,
+    )
+
     app = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -215,14 +388,39 @@ def main() -> None:
         .build()
     )
 
-    # Komutlar
-    app.add_handler(CommandHandler("onayla", cmd_onayla))
-    app.add_handler(CommandHandler("durdur", cmd_durdur))
-    app.add_handler(CommandHandler("durum", cmd_durum))
+    # --------------------------------------------------------
+    # KOMUTLAR
+    # --------------------------------------------------------
 
-    # Katılma istekleri
     app.add_handler(
-        ChatJoinRequestHandler(approve_join_request)
+        CommandHandler(
+            "onayla",
+            cmd_onayla
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "durdur",
+            cmd_durdur
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "durum",
+            cmd_durum
+        )
+    )
+
+    # --------------------------------------------------------
+    # KATILMA İSTEKLERİ
+    # --------------------------------------------------------
+
+    app.add_handler(
+        ChatJoinRequestHandler(
+            approve_join_request
+        )
     )
 
     logger.info(
@@ -232,14 +430,22 @@ def main() -> None:
         approval_enabled,
     )
 
-    # Sadece mesaj ve chat_join_request update'lerini al.
-    # Pending update'leri silme.
+    # --------------------------------------------------------
+    # TEK POLLING
+    # --------------------------------------------------------
+
     app.run_polling(
+        allowed_updates=[
+            "message",
+            "chat_join_request",
+        ],
         drop_pending_updates=False,
-        allowed_updates=["message", "chat_join_request"],
-        close_loop=False,
     )
 
+
+# ============================================================
+# ÇALIŞTIR
+# ============================================================
 
 if __name__ == "__main__":
     main()
