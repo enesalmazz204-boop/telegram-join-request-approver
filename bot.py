@@ -29,8 +29,8 @@ from telethon.errors import FloodWaitError, RPCError
 # Bunları my.telegram.org/apps üzerinden alabilirsin.
 #
 
-API_ID = 12345678
-API_HASH = "BURAYA_API_HASHINI_YAZ"
+API_ID = 31895413
+API_HASH = "2d3a1e09a65f33ed4c54483dcb4a28bb"
 
 
 # =========================================================
