@@ -15,7 +15,7 @@ from telegram.ext import (
 # ============================================================
 # AYARLAR
 # ============================================================
-BOT_TOKEN = '8862557397:AAEUVFKfquhWiX6oCGJKXDZBZblZz5J6fVk'
+BOT_TOKEN = '8206822443:AAFttaam4zgd5n9q44byqR9mqJkpipoYHUw'
 
 # Bu hesap yönetici olarak sabit kabul edilir:
 # @heroprimemarketing
