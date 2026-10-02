@@ -18,7 +18,6 @@ from telegram.ext import (
 # BOT_TOKEN önerilen isimdir; TELEGRAM_BOT_TOKEN da desteklenir.
 BOT_TOKEN = '8206822443:AAG1wWM5woL05ruRNmdoJcKN3vcZNMzSTfc'
     
-).strip()
 
 TARGET_GROUP = os.getenv("TARGET_GROUP", "novaprimesohbet").strip()
 APPROVAL_CONCURRENCY = max(1, int(os.getenv("APPROVAL_CONCURRENCY", "20")))
