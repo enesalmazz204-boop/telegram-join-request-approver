@@ -8,14 +8,14 @@ from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler, ChatJoinRequestHandler,
     ContextTypes, filters
 )
 
 # ============================================================
 # AYARLAR
 # ============================================================
-BOT_TOKEN = '8206822443:AAFttaam4zgd5n9q44byqR9mqJkpipoYHUw'
+BOT_TOKEN = '8862557397:AAEUVFKfquhWiX6oCGJKXDZBZblZz5J6fVk'
 
 # Bu hesap yönetici olarak sabit kabul edilir:
 # @heroprimemarketing
@@ -909,7 +909,7 @@ async def moderation_handler(update, context):
 async def post_init(application):
     """Polling başlamadan önce varsa eski webhook'u temizler."""
     try:
-        await application.bot.delete_webhook(drop_pending_updates=True)
+        await application.bot.delete_webhook(drop_pending_updates=False)
         logger.info("Webhook temizlendi; polling başlatılıyor.")
     except Exception:
         logger.exception("Webhook temizlenirken hata oluştu.")
@@ -936,10 +936,7 @@ def main():
     # Telegram'dan gelen tüm yeni grup katılma isteklerini otomatik onayla.
     # Semaphore sayesinde yoğun trafikte de kontrollü biçimde paralel çalışır.
     app.add_handler(
-        MessageHandler(
-            filters.StatusUpdate.CHAT_JOIN_REQUEST,
-            auto_approve_join_request
-        )
+        ChatJoinRequestHandler(auto_approve_join_request)
     )
 
     app.add_handler(
