@@ -1,4 +1,3 @@
-import os
 import asyncio
 import logging
 
@@ -17,80 +16,44 @@ from telethon.errors import FloodWaitError, RPCError
 
 
 # =========================================================
-# SABİT AYARLAR
+# SADECE BURAYI DOLDUR
 # =========================================================
 
-BOT_TOKEN = "BURAYA_BOT_TOKEN"
+BOT_TOKEN = "8206822443:AAE3zOkzOpU3pD6KpI_0EnjY4B73wSZDsmc"
 
 API_ID = 31895413
 API_HASH = "2d3a1e09a65f33ed4c54483dcb4a28bb"
 SESSION_STRING = "1BJWap1wBu63pJfv6cV_i8BlVZ3BpV5J1Yjl183tFwenBkDU7koOW9Mp8kbTDPMeE2woc_SWB6wShop5W9siIiv6FFKKJp8y1E_MKpJ9t0MoMHb-t0Q_sVPtxe0qjityOAg_lovAtH1jfA4gmumvuEGwcfLibjkFncp_t97_w0Jlvo81M1JJpP6drv8K1KdFQXowRD3z6iKEKc-jVRI6knIyT8hzBAMwj3mY-9LheQdt_FCKNlySsWheeM4DMiRQlu0LoenXo7U4aPqBcJRPUPYYY_R9-OgzwnD-oO_YWrz79b3nt8JDn4TZiDvZFxlT-XEeD4Ru8cxEO0-EBBy4Puli3GqS6nCc="
 
+
+# =========================================================
+# SABİT AYARLAR
+# =========================================================
+
 TARGET_GROUP = "novaprimesohbet"
 
+# Aynı anda kaç isteğin işleneceği
 CONCURRENCY = 10
 
-TARGET_GROUP = os.getenv(
-    "TARGET_GROUP",
-    "novaprimesohbet"
-).strip().lstrip("@")
-
-CONCURRENCY_RAW = os.getenv(
-    "APPROVAL_CONCURRENCY",
-    "10"
-).strip()
-
 
 # =========================================================
-# API ID KONTROLÜ
+# KONTROLLER
 # =========================================================
 
-if not BOT_TOKEN:
-    raise RuntimeError(
-        "BOT_TOKEN Railway Variables içinde bulunamadı."
-    )
+if not BOT_TOKEN or BOT_TOKEN == "BURAYA_YENI_BOT_TOKEN":
+    raise RuntimeError("BOT_TOKEN değerini bot.py içinde doldur.")
 
-if not API_ID_RAW:
-    raise RuntimeError(
-        "API_ID Railway Variables içinde bulunamadı."
-    )
+if not isinstance(API_ID, int) or API_ID <= 0:
+    raise RuntimeError("API_ID sayı olarak girilmelidir.")
 
-try:
-    API_ID = int(API_ID_RAW)
-except ValueError:
-    raise RuntimeError(
-        "API_ID sadece sayı olmalıdır. Örnek: 31895413"
-    )
+if not API_HASH or API_HASH == "BURAYA_API_HASH":
+    raise RuntimeError("API_HASH değerini bot.py içinde doldur.")
 
-if API_ID <= 0:
-    raise RuntimeError(
-        "API_ID geçersiz."
-    )
-
-
-if not API_HASH:
-    raise RuntimeError(
-        "API_HASH Railway Variables içinde bulunamadı."
-    )
-
-if not SESSION_STRING:
-    raise RuntimeError(
-        "SESSION_STRING Railway Variables içinde bulunamadı."
-    )
+if not SESSION_STRING or SESSION_STRING == "BURAYA_SESSION_STRING":
+    raise RuntimeError("SESSION_STRING değerini bot.py içinde doldur.")
 
 if not TARGET_GROUP:
-    raise RuntimeError(
-        "TARGET_GROUP bulunamadı."
-    )
-
-
-try:
-    CONCURRENCY = max(
-        1,
-        int(CONCURRENCY_RAW)
-    )
-except ValueError:
-    CONCURRENCY = 10
+    raise RuntimeError("TARGET_GROUP boş olamaz.")
 
 
 # =========================================================
@@ -102,27 +65,15 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 
-logger = logging.getLogger(
-    "nova-join-approver"
-)
+logger = logging.getLogger("nova-join-approver")
 
 
 # =========================================================
 # DURUM
 # =========================================================
 
-# /onayla yazılınca:
-#
-# 1. Mevcut bekleyen istekler aranır.
-# 2. Bulunanlar onaylanır.
-# 3. Otomatik onay açık kalır.
-#
-# Railway yeniden başlarsa bu değer tekrar False olur.
-
 approval_enabled = False
-
 bulk_running = False
-
 telethon_client = None
 
 
@@ -135,19 +86,9 @@ def is_target_chat(chat) -> bool:
     if not chat:
         return False
 
-    username = (
-        chat.username or ""
-    ).lower()
+    username = (chat.username or "").lower()
 
-    target = TARGET_GROUP.lower()
-
-    if username == target:
-        return True
-
-    if str(chat.id) == target:
-        return True
-
-    return False
+    return username == TARGET_GROUP.lower()
 
 
 # =========================================================
@@ -206,8 +147,7 @@ async def start_telethon():
     if not await telethon_client.is_user_authorized():
 
         raise RuntimeError(
-            "SESSION_STRING geçersiz veya Telegram hesabı "
-            "yetkilendirilmemiş."
+            "SESSION_STRING geçersiz veya yetkisiz."
         )
 
     me = await telethon_client.get_me()
@@ -215,19 +155,19 @@ async def start_telethon():
     logger.info(
         "TELETHON HAZIR | user_id=%s | isim=%s",
         me.id,
-        me.first_name,
+        me.first_name or "",
     )
 
 
 # =========================================================
-# BEKLEYEN İSTEKLERİ GETİR
+# BEKLEYEN İSTEKLERİ BUL
 # =========================================================
 
 async def get_pending_requests():
 
     if telethon_client is None:
         raise RuntimeError(
-            "Telethon client başlatılmamış."
+            "Telethon bağlantısı başlatılmamış."
         )
 
     entity = await telethon_client.get_entity(
@@ -261,10 +201,7 @@ async def get_pending_requests():
                 e.seconds,
             )
 
-            await asyncio.sleep(
-                e.seconds
-            )
-
+            await asyncio.sleep(e.seconds)
             continue
 
         importers = result.importers
@@ -310,7 +247,7 @@ async def get_pending_requests():
             )
 
         logger.info(
-            "SAYFA ALINDI | bu_sayfa=%s | toplam=%s",
+            "SAYFA | bulunan=%s | toplam=%s",
             len(importers),
             len(pending),
         )
@@ -343,18 +280,16 @@ async def get_pending_requests():
             access_hash=last_access_hash,
         )
 
-    # Aynı kullanıcı varsa tekilleştir.
+    # Aynı kullanıcıyı bir kez tut.
     unique = {}
 
     for user in pending:
         unique[user.user_id] = user
 
-    pending = list(
-        unique.values()
-    )
+    pending = list(unique.values())
 
     logger.info(
-        "TOPLAM BEKLEYEN: %s",
+        "TOPLAM BEKLEYEN İSTEK: %s",
         len(pending),
     )
 
@@ -362,7 +297,7 @@ async def get_pending_requests():
 
 
 # =========================================================
-# TEK İSTEĞİ ONAYLA
+# TEK BEKLEYEN İSTEĞİ ONAYLA
 # =========================================================
 
 async def approve_existing_user(
@@ -395,14 +330,12 @@ async def approve_existing_user(
         except FloodWaitError as e:
 
             logger.warning(
-                "FLOOD WAIT | user_id=%s | %s saniye",
-                user.user_id,
+                "FLOOD WAIT | %s saniye | user_id=%s",
                 e.seconds,
+                user.user_id,
             )
 
-            await asyncio.sleep(
-                e.seconds
-            )
+            await asyncio.sleep(e.seconds)
 
         except RPCError as e:
 
@@ -439,16 +372,12 @@ async def approve_all_pending():
             "total": 0,
             "success": 0,
             "failed": 0,
-            "running": True,
+            "already_running": True,
         }
 
     bulk_running = True
 
     try:
-
-        logger.info(
-            "BEKLEYEN İSTEKLER ARANIYOR..."
-        )
 
         entity, users = (
             await get_pending_requests()
@@ -456,19 +385,19 @@ async def approve_all_pending():
 
         total = len(users)
 
-        logger.info(
-            "TOPLAM %s BEKLEYEN BULUNDU",
-            total,
-        )
-
         if total == 0:
 
             return {
                 "total": 0,
                 "success": 0,
                 "failed": 0,
-                "running": False,
+                "already_running": False,
             }
+
+        logger.info(
+            "TOPLU ONAY BAŞLADI | toplam=%s",
+            total,
+        )
 
         semaphore = asyncio.Semaphore(
             CONCURRENCY
@@ -493,9 +422,7 @@ async def approve_all_pending():
             for user in users
         ]
 
-        for future in asyncio.as_completed(
-            tasks
-        ):
+        for future in asyncio.as_completed(tasks):
 
             try:
 
@@ -515,9 +442,7 @@ async def approve_all_pending():
                     e,
                 )
 
-            processed = (
-                success + failed
-            )
+            processed = success + failed
 
             if (
                 processed % 50 == 0
@@ -532,11 +457,17 @@ async def approve_all_pending():
                     failed,
                 )
 
+        logger.info(
+            "TOPLU ONAY BİTTİ | başarılı=%s | başarısız=%s",
+            success,
+            failed,
+        )
+
         return {
             "total": total,
             "success": success,
             "failed": failed,
-            "running": False,
+            "already_running": False,
         }
 
     finally:
@@ -545,7 +476,7 @@ async def approve_all_pending():
 
 
 # =========================================================
-# YENİ GELEN İSTEK
+# YENİ GELEN KATILMA İSTEĞİ
 # =========================================================
 
 async def new_join_request(
@@ -593,17 +524,13 @@ async def new_join_request(
 
         except RetryAfter as e:
 
-            wait = float(
-                e.retry_after
-            )
-
             logger.warning(
                 "BOT RATE LIMIT | %.2f saniye",
-                wait,
+                float(e.retry_after),
             )
 
             await asyncio.sleep(
-                wait
+                float(e.retry_after)
             )
 
         except TelegramError as e:
@@ -611,15 +538,6 @@ async def new_join_request(
             logger.error(
                 "YENİ İSTEK ONAYLANAMADI | user_id=%s | %s",
                 user.id,
-                e,
-            )
-
-            return
-
-        except Exception as e:
-
-            logger.exception(
-                "BEKLENMEYEN HATA: %s",
                 e,
             )
 
@@ -664,7 +582,7 @@ async def onayla(
 
         return
 
-    # Yeni gelenleri de aynı anda otomatik onaya al.
+    # Bundan sonra yeni gelenler otomatik onaylanacak.
     approval_enabled = True
 
     status = await update.effective_message.reply_text(
@@ -684,7 +602,7 @@ async def onayla(
 
             await status.edit_text(
                 "🟢 OTOMATİK ONAY AKTİF\n\n"
-                "📭 Şu anda bekleyen katılma isteği bulunamadı.\n\n"
+                "📭 Bekleyen katılma isteği bulunamadı.\n\n"
                 "Yeni gelenler otomatik olarak onaylanacak."
             )
 
@@ -695,8 +613,7 @@ async def onayla(
             f"👥 Bulunan: {total:,}\n"
             f"✅ Onaylanan: {success:,}\n"
             f"❌ Başarısız: {failed:,}\n\n"
-            "🟢 Otomatik onay AKTİF.\n"
-            "Yeni gelenler otomatik olarak onaylanacak."
+            "🟢 Otomatik onay AKTİF."
         )
 
     except Exception as e:
@@ -705,6 +622,7 @@ async def onayla(
             "TOPLU ONAY HATASI"
         )
 
+        # Hata olsa bile otomatik onay açık kalır.
         approval_enabled = True
 
         await status.edit_text(
@@ -735,7 +653,7 @@ async def durdur(
 
     await update.effective_message.reply_text(
         "⛔ Otomatik onay DURDURULDU.\n\n"
-        "Tekrar çalıştırmak için /onayla"
+        "Tekrar başlatmak için /onayla"
     )
 
 
