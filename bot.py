@@ -17,7 +17,7 @@ from telegram.ext import (
 # Railway Variables'tan token al.
 # BOT_TOKEN önerilen isimdir; TELEGRAM_BOT_TOKEN da desteklenir.
 BOT_TOKEN = '8206822443:AAG1wWM5woL05ruRNmdoJcKN3vcZNMzSTfc'
-    or ""
+    
 ).strip()
 
 TARGET_GROUP = os.getenv("TARGET_GROUP", "novaprimesohbet").strip()
