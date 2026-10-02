@@ -185,14 +185,12 @@ async def get_pending_requests():
 
             result = await telethon_client(
                 functions.messages.GetChatInviteImportersRequest(
-                    peer=entity,
-                    requested=True,
-                    offset_date=offset_date,
-                    offset_user=offset_user,
-                    offset_link="",
-                    limit=100,
-                )
-            )
+    peer=entity,
+    requested=True,
+    offset_date=offset_date,
+    offset_user=offset_user,
+    limit=100,
+)
 
         except FloodWaitError as e:
 
